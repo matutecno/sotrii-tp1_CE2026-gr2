@@ -1,0 +1,12 @@
+# Salida de compilación STM32CubeIDE
+Debug/
+Release/
+
+# Artefactos de build
+*.o
+*.d
+*.su
+*.elf
+*.bin
+*.list
+*.map

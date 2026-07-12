@@ -3,10 +3,17 @@
 ### Cohorte-Grupo: CE2026-gr2
 ### Modelo de placa: NUCLEO-F446RE
 
-### Responsable de la entrega
-| N° SIU | Apellidos, Nombres | Fecha | Deadline |
-| :----- | :----------------- | :---: | :-------: |
-| XXXXXX | Morales, Matute    |       | Semana 04 |
+### Integrantes del grupo:
+| N° SIU | Apellidos, Nombres           |
+| :----- | :--------------------------- |
+| e2610  | Nuñez Cuji, Marcos Neptali   |
+| e2607  | Morales Gariglio, Matías     |
+| e2623  | Berrezueta Guerrero, Rodrigo Antonio |
+
+### Responsable de la entrega:
+| N° SIU | Apellidos, Nombres         | Fecha | Deadline  |
+| :----- | :------------------------- | :----: | :-------: |
+| e2610  | Nuñez Cuji, Marcos Neptali |14/07/26| Semana 04 |
 
 ### Actividades
 - [x] TP1-01 - Device Driver I2C de FreeRTOS

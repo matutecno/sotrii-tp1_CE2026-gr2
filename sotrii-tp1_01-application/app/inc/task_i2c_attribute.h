@@ -55,6 +55,7 @@ typedef struct
 	SemaphoreHandle_t	sem_tx_done;
 
 	TaskHandle_t		task_rx;
+	QueueHandle_t		queue_rx_req;
 	QueueHandle_t		queue_rx;
 } task_i2c_dta_t;
 
@@ -62,8 +63,17 @@ typedef struct
 typedef struct
 {
 	uint16_t	address;
+	uint8_t		reg;
 	uint8_t		data;
 } task_i2c_tx_dta_t;
+
+/* Structure of I2C Rx request */
+typedef struct
+{
+	uint16_t	address;
+	uint8_t		reg;
+	uint8_t		len;
+} task_i2c_rx_req_dta_t;
 
 /********************** external data declaration ****************************/
 

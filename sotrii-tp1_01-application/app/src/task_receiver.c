@@ -80,9 +80,10 @@ void task_receiver(void *parameters)
 		g_task_receiver_cnt++;
 
     	/* Print out: Wait 250mS */
-        uint8_t dev_data;
+        uint16_t dev_address = 0x27;
+        uint8_t  dev_data;
 
-        if (read_i2c(&hi2c1, &dev_data))
+        if (read_i2c(&hi2c1, dev_address, 0x00, &dev_data, 1))
         {
                 LOGGER_INFO("   ==> Task RECEIVER - I2C read: 0x%02X", dev_data);
         }

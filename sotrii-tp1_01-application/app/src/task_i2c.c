@@ -54,6 +54,8 @@
 #define TASK_XXXX_DEL_ZERO	(pdMS_TO_TICKS(0ul))
 #define TASK_XXXX_DEL_MAX	(pdMS_TO_TICKS(250ul))
 
+#define TASK_XXXX_RX_BUF_LEN	16
+
 /********************** internal data declaration ****************************/
 
 /********************** internal data declaration ****************************/
@@ -96,22 +98,21 @@ void task_i2c_tx(void *parameters)
 	/* As per most tasks, this task is implemented in an infinite loop. */
 	for (;;)
 	{
+		task_i2c_tx_dta_t task_i2c_tx_dta;
+
+		/* Bloquea hasta que un cliente pide una escritura (write_i2c) */
+		xQueueReceive(p_task_i2c_tx_dta->queue_tx, &task_i2c_tx_dta, portMAX_DELAY);
+
 		/* Update Task Counter */
 		g_task_xxxx_tx_cnt++;
 
-		task_i2c_tx_dta_t task_i2c_tx_dta;
-
 		cycle_counter_reset();
 
-		xQueueReceive(p_task_i2c_tx_dta->queue_tx, &task_i2c_tx_dta, portMAX_DELAY);
-
-		HAL_I2C_Master_Transmit(p_task_i2c_tx_dta->device_id, (task_i2c_tx_dta.address << 1), &task_i2c_tx_dta.data, sizeof(task_i2c_tx_dta.data), HAL_MAX_DELAY);
+		HAL_I2C_Mem_Write(p_task_i2c_tx_dta->device_id, (task_i2c_tx_dta.address << 1),
+						  task_i2c_tx_dta.reg, I2C_MEMADD_SIZE_8BIT,
+						  &task_i2c_tx_dta.data, sizeof(task_i2c_tx_dta.data), HAL_MAX_DELAY);
 
 		g_task_xxxx_tx_runtime_us = cycle_counter_get_time_us();
-
-    	/* Print out: Wait 250mS */
-		LOGGER_INFO(p_task_i2c_tx_wait_250mS);
-		vTaskDelay(TASK_XXXX_DEL_MAX);
 	}
 }
 
@@ -132,33 +133,34 @@ void task_i2c_rx(void *parameters)
 	/* As per most tasks, this task is implemented in an infinite loop. */
 	for (;;)
 	{
-		/* Update Task Counter */
+        task_i2c_rx_req_dta_t req;
+        uint8_t buf[TASK_XXXX_RX_BUF_LEN];
 
-        uint16_t dev_address = 0x27;
-        uint8_t  dev_data;
+		/* Bloquea hasta que un cliente pide una lectura (read_i2c) */
+        xQueueReceive(p_task_i2c_rx_dta->queue_rx_req, &req, portMAX_DELAY);
 
 		g_task_xxxx_rx_cnt++;
 
+        if (req.len > TASK_XXXX_RX_BUF_LEN)
+        	req.len = TASK_XXXX_RX_BUF_LEN;
+
         cycle_counter_reset();
 
-        HAL_I2C_Master_Receive(p_task_i2c_rx_dta->device_id, (dev_address << 1) | 1, &dev_data, sizeof(dev_data), HAL_MAX_DELAY);
+        HAL_StatusTypeDef st = HAL_I2C_Mem_Read(p_task_i2c_rx_dta->device_id, (req.address << 1),
+        										    req.reg, I2C_MEMADD_SIZE_8BIT,
+												buf, req.len, HAL_MAX_DELAY);
 
         g_task_xxxx_rx_runtime_us = cycle_counter_get_time_us();
 
         HAL_GPIO_TogglePin(LED_A_PORT, LED_A_PIN);
 
-        xQueueSend(p_task_i2c_rx_dta->queue_rx, &dev_data, portMAX_DELAY);
-
-
-		cycle_counter_reset();
-
-		HAL_GPIO_TogglePin(LED_A_PORT, LED_A_PIN);
-
-		g_task_xxxx_rx_runtime_us = cycle_counter_get_time_us();
-
-    	/* Print out: Wait 250mS */
-		LOGGER_INFO(p_task_i2c_rx_wait_250mS);
-		vTaskDelay(TASK_XXXX_DEL_MAX);
+        /* Solo devuelve datos si la transaccion fue OK; si hubo NACK, el
+         * cliente (read_i2c) hace timeout y retorna false. */
+        if (HAL_OK == st)
+        {
+        	for (uint8_t i = 0; i < req.len; i++)
+        		xQueueSend(p_task_i2c_rx_dta->queue_rx, &buf[i], portMAX_DELAY);
+        }
 	}
 }
 

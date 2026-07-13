@@ -111,6 +111,11 @@ void task_bmp180(void *parameters)
 	{
 		int32_t t = bmp180_read_temperature();
 
+		/* Ejercita ioctl_i2c del driver (permite medir su WCET y evita que
+		 * --gc-sections elimine la funcion al no tener otro caller). */
+		uint32_t rx_wcet_us;
+		ioctl_i2c(&hi2c1, I2C_GET_RX_WCET_US, &rx_wcet_us);
+
 		LOGGER_INFO("   ==> Task BMP180 - Temp: %d.%d C", (int)(t / 10), (int)(t % 10));
 
 		vTaskDelay(TASK_BMP180_DEL_MAX);

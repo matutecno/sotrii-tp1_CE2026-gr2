@@ -257,19 +257,32 @@ BMP180 es el esclavo que ejercita el driver de punta a punta.
   transferencia de las gatekeeper baja de los ~23,6 ms (latencia de NACK sin
   esclavo) a las decenas de µs de una transacción exitosa.
 
-### WCET (re-medición pendiente en esta versión)
+### WCET medido (con BMP180)
 
-Como `read_i2c` cambió de semántica (ahora bloquea esperando la respuesta de la
-gatekeeper), su WCET ya no es comparable con el de la versión anterior. Re-medir
-en el depurador (ventana *Live Expressions*; core @ 180 MHz → µs = ciclos / 180):
+Medido en el depurador (*Live Expressions*) tras ~30 s de corrida; se registra el
+máximo observado. Core @ 180 MHz → µs = ciclos / 180.
 
 | Función de interfaz | Variable | WCET [ciclos] | WCET [µs] |
 | :------------------ | :------- | :-----------: | :-------: |
-| `write_i2c()`       | `g_write_i2c_wcet_cy` | _(a medir)_ | |
-| `read_i2c()`        | `g_read_i2c_wcet_cy`  | _(a medir)_ | |
-| `ioctl_i2c()`       | `g_ioctl_i2c_wcet_cy` | _(a medir)_ | |
+| `write_i2c()`       | `g_write_i2c_wcet_cy` | 941 | 5,23 |
+| `read_i2c()`        | `g_read_i2c_wcet_cy`  | 941 | 5,23 |
+| `ioctl_i2c()`       | `g_ioctl_i2c_wcet_cy` | 38  | 0,21 |
 
-| Gatekeeper | Variable | Tiempo [µs] |
-| :--------- | :------- | :---------: |
-| `task_i2c_tx` | `g_task_xxxx_tx_runtime_us` | _(a medir)_ |
-| `task_i2c_rx` | `g_task_xxxx_rx_runtime_us` | _(a medir)_ |
+| Gatekeeper (transacción I2C real) | Variable | Tiempo [µs] |
+| :-------------------------------- | :------- | :---------: |
+| `task_i2c_tx` (`HAL_I2C_Mem_Write`) | `g_task_xxxx_tx_runtime_us` | 280 |
+| `task_i2c_rx` (`HAL_I2C_Mem_Read`)  | `g_task_xxxx_rx_runtime_us` | 280 |
+
+Para ejercitar `ioctl_i2c` (y evitar que `--gc-sections` lo elimine, al no tener
+otro caller con el demo parkeado), `task_bmp180` invoca en su lazo
+`ioctl_i2c(&hi2c1, I2C_GET_RX_WCET_US, &rx_us)`.
+
+> Nota metodológica: el DWT (`cycle_counter_*`) es **un único contador de HW
+> compartido** que cada tarea pone en 0. Por eso el WCET de `read_i2c` (5,23 µs)
+> **no** refleja la latencia de lectura: al bloquearse esperando la respuesta, la
+> gatekeeper RX resetea el mismo contador antes de su `Mem_Read`, y `read_i2c`
+> termina midiendo sólo su tramo final (de ahí que dé casi igual que `write_i2c`).
+> La **latencia real de la transacción** de lectura es la de la gatekeeper RX:
+> **280 µs** (`g_task_xxxx_rx_runtime_us`), coherente con un `Mem_Read` de pocos
+> bytes a 100 kHz. En cambio `write_i2c`/`ioctl_i2c`, que no se bloquean, sí dan
+> valores representativos de su costo de CPU.

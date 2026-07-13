@@ -83,6 +83,10 @@ void open_i2c(I2C_HandleTypeDef *h_i2c_device)
 	configASSERT(NULL != p_task_i2c_dta->sem_tx_done);
 	vQueueAddToRegistry(p_task_i2c_dta->queue_tx, "Task I2C Tx Queue Handle");
 
+	p_task_i2c_dta->queue_rx_req = xQueueCreate(5, sizeof(task_i2c_rx_req_dta_t));
+	configASSERT(NULL != p_task_i2c_dta->queue_rx_req);
+	vQueueAddToRegistry(p_task_i2c_dta->queue_rx_req, "Task I2C Rx Req Queue Handle");
+
 	p_task_i2c_dta->queue_rx = xQueueCreate(10, sizeof(uint8_t));
 	configASSERT(NULL != p_task_i2c_dta->queue_rx);
 	vQueueAddToRegistry(p_task_i2c_dta->queue_rx, "Task I2C Rx Queue Handle");
@@ -111,6 +115,8 @@ void release_i2c(I2C_HandleTypeDef *h_i2c_device)
 	{
 	    vQueueUnregisterQueue(p_task_i2c_dta->queue_tx);
 		vQueueDelete(p_task_i2c_dta->queue_tx);
+	    vQueueUnregisterQueue(p_task_i2c_dta->queue_rx_req);
+		vQueueDelete(p_task_i2c_dta->queue_rx_req);
 	    vQueueUnregisterQueue(p_task_i2c_dta->queue_rx);
 		vQueueDelete(p_task_i2c_dta->queue_rx);
 
@@ -119,7 +125,7 @@ void release_i2c(I2C_HandleTypeDef *h_i2c_device)
 	}
 }
 
-void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t dev_address, uint8_t dev_data)
+void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t dev_address, uint8_t dev_reg, uint8_t dev_data)
 {
 	task_i2c_dta_t *p_task_i2c_dta = &task_i2c_dta;
 
@@ -133,6 +139,7 @@ void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t dev_address, uint8_t de
 		task_i2c_tx_dta_t task_i2c_tx_dta;
 
 		task_i2c_tx_dta.address = dev_address;
+		task_i2c_tx_dta.reg = dev_reg;
 		task_i2c_tx_dta.data = dev_data;
 
 		xQueueSend(p_task_i2c_dta->queue_tx, &task_i2c_tx_dta, portMAX_DELAY);
@@ -143,9 +150,8 @@ void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t dev_address, uint8_t de
 		g_write_i2c_wcet_cy = cy;
 }
 
-bool read_i2c(I2C_HandleTypeDef *h_i2c_device, uint8_t *data)
+bool read_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t dev_address, uint8_t dev_reg, uint8_t *data, uint8_t len)
 {
-	/* Prevent unused argument(s) compilation warning */
 	task_i2c_dta_t *p_task_i2c_dta = &task_i2c_dta;
 
 	p_task_i2c_dta->device_id = h_i2c_device;
@@ -155,8 +161,23 @@ bool read_i2c(I2C_HandleTypeDef *h_i2c_device, uint8_t *data)
 	bool ok = false;
 	if(p_task_i2c_dta -> device_id == h_i2c_device)
 	{
-		if (xQueueReceive(p_task_i2c_dta->queue_rx, data, 0) == pdPASS)
-			ok = true;
+		task_i2c_rx_req_dta_t req;
+
+		req.address = dev_address;
+		req.reg = dev_reg;
+		req.len = len;
+
+		xQueueSend(p_task_i2c_dta->queue_rx_req, &req, portMAX_DELAY);
+
+		ok = true;
+		for (uint8_t i = 0; i < len; i++)
+		{
+			if (xQueueReceive(p_task_i2c_dta->queue_rx, &data[i], pdMS_TO_TICKS(100)) != pdPASS)
+			{
+				ok = false;
+				break;
+			}
+		}
 	}
 
 	uint32_t cy = cycle_counter_get();

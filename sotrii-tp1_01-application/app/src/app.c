@@ -48,6 +48,7 @@
 #include "task_receiver.h"
 #include "task_i2c.h"
 #include "task_i2c_interface.h"
+#include "task_bmp180.h"
 
 /********************** macros and definitions *******************************/
 #define G_APP_TICK_CNT_INI				0ul
@@ -77,6 +78,7 @@ uint32_t g_app_stack_overflow_cnt;
 /* Declare a variable of type TaskHandle_t. This is used to reference threads. */
 TaskHandle_t h_task_sender;
 TaskHandle_t h_task_receiver;
+TaskHandle_t h_task_bmp180;
 
 /********************** external functions definition ************************/
 void app_init(void)
@@ -111,6 +113,21 @@ void app_init(void)
 	/* Add threads, ... */
     BaseType_t ret;
 
+    /* Task BMP180 thread at priority 1 - dueña unica de hi2c1 */
+    ret = xTaskCreate(task_bmp180,						/* Pointer to the function thats implement the task. */
+					  "Task BMP180",					/* Text name for the task. This is to facilitate debugging only. */
+					  (2 * configMINIMAL_STACK_SIZE),	/* Stack depth in words. */
+					  NULL,								/* We are not using the task parameter. */
+					  (tskIDLE_PRIORITY + 1ul),			/* This task will run at priority 1. */
+					  &h_task_bmp180);					/* We are using a variable as task handle. */
+
+    /* Check the thread was created successfully. */
+    configASSERT(pdPASS == ret);
+
+    /* Demo del device driver I2C (gatekeeper). Deshabilitado mientras la
+     * task BMP180 es dueña unica de hi2c1. Para volver al demo: descomentar
+     * estos bloques + open_i2c() de abajo, y comentar la task BMP180. */
+#if 0
     /* Task Sender thread at priority 1 */
     ret = xTaskCreate(task_sender,						/* Pointer to the function thats implement the task. */
 					  "Task Sender",					/* Text name for the task. This is to facilitate debugging only. */
@@ -132,6 +149,7 @@ void app_init(void)
 
     /* Check the thread was created successfully. */
     configASSERT(pdPASS == ret);
+#endif
 
     /* Total amount of heap space that remains unallocated. Is also available
      * with xFreeBytesRemaining variable for heap management schemes 2 to 5.
@@ -143,7 +161,8 @@ void app_init(void)
      * one task in this state at the moment), but the currently run task ID
      * is stored in variable pxCurrentTCB */
 
-    /* I2C Device Diver Init */
+    /* I2C Device Driver Init (gatekeeper). La task BMP180 lo usa via
+     * write_i2c()/read_i2c(); es la unica cliente del bus. */
     open_i2c(&hi2c1);
 
     /* Application Interrupts Init */

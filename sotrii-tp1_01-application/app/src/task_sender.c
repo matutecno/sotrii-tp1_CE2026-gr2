@@ -89,7 +89,7 @@ void task_sender(void *parameters)
 
 		/* I2C Device Diver Write */
 		dev_data = ~dev_data;
-		write_i2c(&hi2c1, dev_address, dev_data);
+		write_i2c(&hi2c1, dev_address, 0x00, dev_data);
 
     	/* Print out: Wait 250mS */
 		LOGGER_INFO(p_task_sender_wait_250mS);

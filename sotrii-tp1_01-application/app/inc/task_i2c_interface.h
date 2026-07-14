@@ -52,8 +52,9 @@ extern "C" {
 extern void open_i2c(I2C_HandleTypeDef *h_i2c_device);
 extern void release_i2c(I2C_HandleTypeDef *h_i2c_device);
 
-extern void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t address, uint8_t data);
-extern bool read_i2c(I2C_HandleTypeDef *h_i2c_device, uint8_t *data);
+extern void write_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t address, uint8_t reg, uint8_t data);
+extern bool read_i2c(I2C_HandleTypeDef *h_i2c_device, uint16_t address, uint8_t reg, uint8_t *data, uint8_t len);
+extern bool ioctl_i2c(I2C_HandleTypeDef *h_i2c_device, uint8_t cmd, void *arg);
 
 typedef enum {
       I2C_GET_TX_WCET_US = 0,   /* copia en *arg el WCET de TX [us] */

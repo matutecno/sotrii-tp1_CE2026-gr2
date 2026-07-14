@@ -220,3 +220,69 @@ Tiempo de transferencia de las tareas gatekeeper (accesible además vía
 > bus-error). Con un esclavo real (p. ej. BMP180) y pull-ups, este tiempo baja a
 > decenas de µs. El valor refleja la latencia de la condición de falla, no la de
 > una transacción exitosa.
+
+---
+
+## Actualización 2026-07-13 — Driver register-aware + esclavo real (BMP180)
+
+Para probar el driver contra un esclavo I2C real se conectó un **BMP180**
+(dirección `0x77`, `I2C1` en PB8/PB9) y se evolucionó el driver de transacciones
+de 1 byte a **transacciones por registro**, necesarias para hablar con el sensor.
+
+### Cambios de diseño
+
+- **`write_i2c(h, addr, reg, val)`** — ahora lleva el registro destino; la
+  gatekeeper TX usa `HAL_I2C_Mem_Write`.
+- **`read_i2c(h, addr, reg, buf, len)`** — pasa de "no bloqueante, saco lo que
+  haya" a **pedido → respuesta**: encola un pedido `{addr, reg, len}` en la nueva
+  cola `queue_rx_req` y espera los `len` bytes por `queue_rx` (bloqueante, timeout
+  100 ms). La gatekeeper RX (`HAL_I2C_Mem_Read`) sólo responde ante un pedido; si
+  la transacción da NACK no devuelve datos y `read_i2c` retorna `false`.
+- **`task_i2c_attribute.h`** — el struct TX incorpora `reg`; se agrega
+  `task_i2c_rx_req_dta_t {address, reg, len}` y la cola `queue_rx_req`.
+- **`task_bmp180.c`** (cliente nuevo) — lee los coeficientes AC5/AC6/MC/MD, dispara
+  la conversión de temperatura (`0x2E` → `0xF4`), espera 5 ms y lee `UT` (`0xF6`),
+  todo **a través de `write_i2c`/`read_i2c`** (no toca la HAL). Es la única cliente
+  del bus; el demo `task_sender`/`task_receiver` queda deshabilitado (`#if 0`).
+
+El patrón sigue siendo **gatekeeper + colas + asignación estática**; ahora el
+BMP180 es el esclavo que ejercita el driver de punta a punta.
+
+### Comportamiento observado (con esclavo real)
+
+- `task_bmp180` imprime la temperatura ambiente, coherente, cada 1 s
+  (`==> Task BMP180 - Temp: 25.3 C`), confirmando que la lectura viaja por el
+  gatekeeper y que la compensación del datasheet es correcta.
+- Se confirma la **Nota 2** de arriba: con esclavo real y pull-ups, el tiempo de
+  transferencia de las gatekeeper baja de los ~23,6 ms (latencia de NACK sin
+  esclavo) a las decenas de µs de una transacción exitosa.
+
+### WCET medido (con BMP180)
+
+Medido en el depurador (*Live Expressions*) tras ~30 s de corrida; se registra el
+máximo observado. Core @ 180 MHz → µs = ciclos / 180.
+
+| Función de interfaz | Variable | WCET [ciclos] | WCET [µs] |
+| :------------------ | :------- | :-----------: | :-------: |
+| `write_i2c()`       | `g_write_i2c_wcet_cy` | 941 | 5,23 |
+| `read_i2c()`        | `g_read_i2c_wcet_cy`  | 941 | 5,23 |
+| `ioctl_i2c()`       | `g_ioctl_i2c_wcet_cy` | 38  | 0,21 |
+
+| Gatekeeper (transacción I2C real) | Variable | Tiempo [µs] |
+| :-------------------------------- | :------- | :---------: |
+| `task_i2c_tx` (`HAL_I2C_Mem_Write`) | `g_task_xxxx_tx_runtime_us` | 280 |
+| `task_i2c_rx` (`HAL_I2C_Mem_Read`)  | `g_task_xxxx_rx_runtime_us` | 280 |
+
+Para ejercitar `ioctl_i2c` (y evitar que `--gc-sections` lo elimine, al no tener
+otro caller con el demo parkeado), `task_bmp180` invoca en su lazo
+`ioctl_i2c(&hi2c1, I2C_GET_RX_WCET_US, &rx_us)`.
+
+> Nota metodológica: el DWT (`cycle_counter_*`) es **un único contador de HW
+> compartido** que cada tarea pone en 0. Por eso el WCET de `read_i2c` (5,23 µs)
+> **no** refleja la latencia de lectura: al bloquearse esperando la respuesta, la
+> gatekeeper RX resetea el mismo contador antes de su `Mem_Read`, y `read_i2c`
+> termina midiendo sólo su tramo final (de ahí que dé casi igual que `write_i2c`).
+> La **latencia real de la transacción** de lectura es la de la gatekeeper RX:
+> **280 µs** (`g_task_xxxx_rx_runtime_us`), coherente con un `Mem_Read` de pocos
+> bytes a 100 kHz. En cambio `write_i2c`/`ioctl_i2c`, que no se bloquean, sí dan
+> valores representativos de su costo de CPU.

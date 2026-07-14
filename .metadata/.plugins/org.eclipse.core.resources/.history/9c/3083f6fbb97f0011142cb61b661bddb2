@@ -1,0 +1,158 @@
+# Análisis del código fuente – TP1 Actividad 03 – Device Driver ADC
+
+## app.c
+
+Este archivo realiza la inicialización general de la aplicación.
+
+Su función principal es inicializar los distintos módulos del proyecto antes de que el scheduler de FreeRTOS comience a ejecutar las tareas. Entre estas inicializaciones se encuentran la placa, la aplicación y los módulos auxiliares.
+
+No contiene lógica específica del ADC, sino que prepara el sistema para su funcionamiento.
+
+---
+
+## app_it.c
+
+Este archivo contiene las rutinas relacionadas con las interrupciones de la aplicación.
+
+Se definen variables globales para registrar:
+
+- cantidad de interrupciones recibidas,
+- tiempo de ejecución de la ISR,
+- banderas de sincronización.
+
+La función `app_it_init()` inicializa dichas variables protegiendo el acceso mediante la deshabilitación temporal de interrupciones.
+
+También implementa dos callbacks de la HAL:
+
+### HAL_GPIO_EXTI_Callback()
+
+Corresponde a la interrupción externa del pulsador. Actualmente solamente verifica qué GPIO produjo la interrupción y deja un espacio para que el usuario agregue el procesamiento correspondiente.
+
+### HAL_ADC_ConvCpltCallback()
+
+Se ejecuta cuando finaliza una conversión del ADC en modo no bloqueante.
+
+Dentro de esta función:
+
+- verifica que el ADC corresponda al ADC1,
+- activa una bandera indicando que existe un dato disponible,
+- incrementa un contador de conversiones realizadas,
+- almacena el tiempo de ejecución utilizando el contador de ciclos (DWT).
+
+---
+
+## task_receiver.c
+
+Implementa una tarea denominada `task_receiver`.
+
+Actualmente su funcionamiento es únicamente demostrativo.
+
+Al iniciarse:
+
+- inicializa un contador,
+- informa mediante el logger que la tarea comenzó a ejecutarse.
+
+Posteriormente ejecuta un ciclo infinito donde:
+
+- incrementa un contador de ejecuciones,
+- imprime un mensaje por consola,
+- permanece bloqueada durante 250 ms utilizando `vTaskDelay()`.
+
+En esta plantilla todavía no recibe datos provenientes del driver ADC.
+
+---
+
+## task_adc.c
+
+Implementa la tarea asociada al Device Driver ADC.
+
+Actualmente solamente existe la tarea de recepción (`task_adc_rx`).
+
+Durante su ejecución:
+
+- inicializa contadores y variables de tiempo,
+- informa mediante el logger el inicio de la tarea,
+- entra en un ciclo infinito.
+
+En cada iteración:
+
+- incrementa un contador de ejecuciones,
+- reinicia el contador de ciclos,
+- conmuta el LED de usuario,
+- mide el tiempo de ejecución de la tarea,
+- espera 250 ms mediante `vTaskDelay()`.
+
+Actualmente la tarea no realiza conversiones ADC ni procesa datos, funcionando únicamente como una base para implementar el driver.
+
+---
+
+## task_adc_interface.c
+
+Implementa las funciones de interfaz del Device Driver ADC.
+
+Se encuentran definidas las operaciones típicas de un driver:
+
+- `open_adc()`
+- `release_adc()`
+- `write_adc()`
+- `read_adc()`
+- `ioctl_adc()`
+
+En la plantilla todas estas funciones únicamente reciben el manejador del ADC y utilizan la macro `UNUSED()` para evitar advertencias del compilador.
+
+Estas funciones deberán implementarse durante el desarrollo del trabajo práctico para controlar el periférico ADC.
+
+---
+
+## task_adc_interface.h
+
+Este archivo contiene las declaraciones públicas de la interfaz del driver ADC.
+
+Expone las funciones que podrán ser utilizadas por otras tareas del sistema:
+
+- apertura del dispositivo,
+- liberación del dispositivo,
+- lectura,
+- escritura,
+- configuración mediante `ioctl`.
+
+Actúa como la interfaz pública del Device Driver.
+
+---
+
+## freertos.c
+
+Contiene las funciones Hook de FreeRTOS.
+
+### vApplicationIdleHook()
+
+Se ejecuta cuando ninguna tarea lista puede utilizar el procesador.
+
+En esta función solamente se incrementa un contador para medir cuánto tiempo permanece el sistema en la tarea IDLE.
+
+### vApplicationTickHook()
+
+Se ejecuta en cada interrupción del Tick de FreeRTOS.
+
+Incrementa un contador que permite conocer la cantidad de ticks transcurridos desde el inicio del sistema.
+
+### vApplicationStackOverflowHook()
+
+Es llamada automáticamente por FreeRTOS cuando detecta un desbordamiento de pila en alguna tarea.
+
+Su objetivo es facilitar la detección de errores durante el desarrollo.
+
+---
+
+# Funcionamiento general
+
+El proyecto corresponde a una plantilla para implementar un Device Driver ADC utilizando FreeRTOS.
+
+La arquitectura separa claramente:
+
+- la aplicación,
+- las rutinas de interrupción,
+- las tareas del sistema,
+- la interfaz pública del driver.
+
+Actualmente las tareas únicamente realizan funciones de demostración (contador, temporización y cambio de estado del LED), mientras que la interfaz del ADC se encuentra preparada para que posteriormente se implementen las operaciones propias del Device Driver, como la apertura del dispositivo, lectura de conversiones, configuración y liberación del periférico.

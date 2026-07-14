@@ -9,7 +9,7 @@
 | e2610  | Nuñez Cuji, Marcos Neptali   |
 | e2607  | Morales Gariglio, Matías     |
 | e2623  | Berrezueta Guerrero, Rodrigo Antonio |
-
+| e2611  | Pinto Fuentes, Juan Sebastian |
 ### Responsable de la entrega:
 | N° SIU | Apellidos, Nombres         | Fecha | Deadline  |
 | :----- | :------------------------- | :----: | :-------: |
@@ -18,4 +18,4 @@
 ### Actividades
 - [x] TP1-01 - Device Driver I2C de FreeRTOS
 - [ ] TP1-02 - Device Driver UART de FreeRTOS
-- [ ] TP1-03 - Device Driver ADC de FreeRTOS
+- [x] TP1-03 - Device Driver ADC de FreeRTOS

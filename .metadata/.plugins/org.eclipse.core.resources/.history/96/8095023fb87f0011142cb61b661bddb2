@@ -1,0 +1,232 @@
+/*
+ * Copyright (c) 2026 Juan Manuel Cruz <jcruz@fi.uba.ar> <jcruz@frba.utn.edu.ar>.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ * @author : Juan Manuel Cruz <jcruz@fi.uba.ar> <jcruz@frba.utn.edu.ar>
+ */
+
+/********************** inclusions *******************************************/
+/* Project includes */
+#include "main.h"
+#include "cmsis_os.h"
+
+/* Demo includes */
+#include "logger.h"
+#include "dwt.h"
+
+/* Application & Tasks includes */
+#include "board.h"
+#include "app.h"
+#include "app_it.h"
+#include "task_adc.h"
+#include "task_adc_attribute.h"
+#include "task_adc_interface.h"
+
+/********************** macros and definitions *******************************/
+
+/********************** internal data declaration ****************************/
+
+/********************** internal functions declaration ***********************/
+
+/********************** internal data definition *****************************/
+
+/* ADC Device Driver */
+adc_device_t adc_device;
+
+/* DMA Buffer */
+static uint32_t adc_dma_buffer = 0;
+
+/********************** external data declaration ****************************/
+
+/********************** external functions definition ************************/
+
+/**
+ * @brief Initializes the ADC peripheral in DMA mode.
+ */
+void init_DMA_ADC(void)
+{
+    HAL_StatusTypeDef ret;
+
+    ret = HAL_ADC_Start_DMA(
+            adc_device.hadc,
+            (uint32_t *)&adc_dma_buffer,
+            1);
+
+    if (ret == HAL_OK){
+    	LOGGER_INFO("DMA activado supuestamente");
+    };
+}
+
+/**
+ * @brief Returns the latest sample stored by the DMA.
+ */
+uint16_t adc_get_dma_sample(void)
+{
+	return adc_dma_buffer;
+}
+
+/**
+ * @brief Sends a sample from an ISR to the Driver Input Queue.
+ */
+BaseType_t adc_input_push_from_isr(
+        uint16_t sample,
+        BaseType_t *pxHigherPriorityTaskWoken)
+{
+    BaseType_t ret;
+
+    ret = xQueueOverwriteFromISR(
+            adc_device.input_queue,
+            &sample,
+            pxHigherPriorityTaskWoken);
+
+    return ret;
+}
+
+/* Interface functions */
+
+void open_adc(ADC_HandleTypeDef *h_adc_device)
+{
+	/* Save ADC Handle */
+	adc_device.hadc = h_adc_device;
+
+	/* Device Information */
+	adc_device.device_id = ADC_DEVICE_ID;
+	adc_device.opened = true;
+
+	/* Create Input Queue */
+	adc_device.input_queue = xQueueCreate(
+	        ADC_INPUT_QUEUE_LENGTH,
+	        sizeof(uint16_t));
+
+	if (adc_device.input_queue == NULL)
+	{
+	    LOGGER_INFO("Error creating ADC Input Queue");
+	    return;
+	}
+
+	/* Create Output Queue */
+	adc_device.output_queue = xQueueCreate(
+	        ADC_OUTPUT_QUEUE_LENGTH,
+	        sizeof(uint16_t));
+
+	if (adc_device.output_queue == NULL)
+	{
+	    LOGGER_INFO("Error creating ADC Output Queue");
+
+	    vQueueDelete(adc_device.input_queue);
+
+	    return;
+	}
+
+	/* Create Gatekeeper Task */
+	BaseType_t ret;
+
+	ret = xTaskCreate(
+	        task_adc_rx,
+	        TASK_ADC_RX_NAME,
+	        TASK_ADC_RX_STACK_SIZE,
+	        NULL,
+	        TASK_ADC_RX_PRIORITY,
+	        &adc_device.task_rx);
+
+	if (ret != pdPASS)
+	{
+	    LOGGER_INFO("Error creating ADC Gatekeeper Task");
+
+	    vQueueDelete(adc_device.input_queue);
+	    vQueueDelete(adc_device.output_queue);
+
+	    return;
+	}
+	else{LOGGER_INFO("	ADC Gatekeeper Task");}
+
+
+}
+
+void release_adc(ADC_HandleTypeDef *h_adc_device)
+{
+	UNUSED(h_adc_device);
+
+	/* Stop ADC DMA */
+	HAL_ADC_Stop_DMA(adc_device.hadc);
+
+	/* Delete Gatekeeper Task */
+	if (adc_device.task_rx != NULL)
+	{
+		vTaskDelete(adc_device.task_rx);
+	}
+
+	/* Delete Queues */
+	if (adc_device.input_queue != NULL)
+	{
+		vQueueDelete(adc_device.input_queue);
+	}
+
+	if (adc_device.output_queue != NULL)
+	{
+		vQueueDelete(adc_device.output_queue);
+	}
+
+	/* Reset Driver */
+	adc_device.hadc = NULL;
+	adc_device.task_rx = NULL;
+	adc_device.input_queue = NULL;
+	adc_device.output_queue = NULL;
+	adc_device.opened = false;
+}
+
+void write_adc(ADC_HandleTypeDef *h_adc_device)
+{
+	UNUSED(h_adc_device);
+
+	/* ADC is a read-only device.
+	 * No write operation is supported.
+	 */
+}
+
+uint16_t read_adc(ADC_HandleTypeDef *h_adc_device)
+{
+	UNUSED(h_adc_device);
+
+	return adc_device.value;
+}
+
+void ioctl_adc(ADC_HandleTypeDef *h_adc_device)
+{
+	UNUSED(h_adc_device);
+
+	/* TODO:
+	 * Configure driver parameters.
+	 * The current API does not receive commands
+	 * or configuration parameters.
+	 */
+}
+
+/********************** end of file ******************************************/
